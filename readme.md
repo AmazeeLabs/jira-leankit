@@ -1,3 +1,12 @@
+# Set up
+
+- Run `composer install`.
+- Copy and rename _phpunit.xml.example_ to _phpunit.xml_ and add your details for Jira and Leankit. 
+- Run `vendor/bin/phpunit`
+
+---
+
+
 # Lumen PHP Framework
 
 [![Build Status](https://travis-ci.org/laravel/lumen-framework.svg)](https://travis-ci.org/laravel/lumen-framework)
