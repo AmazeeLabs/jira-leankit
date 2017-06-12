@@ -36,4 +36,11 @@ class LeankitTest extends TestCase
 
     $this->assertEquals('Amazee GMT', $board->Title);
   }
+
+  public function testGetGmtCards() {
+    $cards = $this->leankit->getCards();
+
+    $this->assertNotFalse($cards);
+    $this->assertGreaterThanOrEqual(0, count($cards));
+  }
 }
