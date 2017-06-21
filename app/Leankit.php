@@ -1,5 +1,7 @@
 <?php
 
+// TODO: abstract the GMT word/board into just a board and maybe play with more defaults.
+
 namespace App;
 
 use LeanKitKanban;
@@ -15,6 +17,11 @@ class Leankit extends LeanKitKanban {
    * @var array $map mapping for adding/updating issues from external sources.
    */
   protected $map;
+
+  /**
+   * @var mixed $board most recently used.
+   */
+  protected $board;
 
   /**
    * Leankit constructor.
@@ -50,7 +57,7 @@ class Leankit extends LeanKitKanban {
         'Issue key' => 'ExternalCardID',
         'Summary' => 'Title',
         'Description' => 'Description',
-        'Type' => 'Issue type'
+        'Issue type' => 'Type',
       ];
     }
 
@@ -82,6 +89,11 @@ class Leankit extends LeanKitKanban {
    *  Get board object.
    */
   public function getGmtBoard($name = 'Amazee GMT') {
+    if ($this->board && $this->board->Title == $name) {
+      // Look no further.
+      return $this->board;
+    }
+
     $board = false;
 
     $boards = $this->getGmtBoards();
@@ -96,7 +108,8 @@ class Leankit extends LeanKitKanban {
       $board = json_decode($board);
     }
 
-    return ($board and $board->ReplyCode == 200) ? $board->ReplyData[0] : false;
+    $this->board = ($board and $board->ReplyCode == 200) ? $board->ReplyData[0] : false;
+    return $this->board;
   }
 
   /**
@@ -108,7 +121,7 @@ class Leankit extends LeanKitKanban {
    * @return array|bool
    *  Results contained in the given object.
    */
-  protected function _getCards($cards) {
+  protected function _decodeCards($cards) {
     if ($cards) {
       $cards = json_decode($cards);
       $cards = ($cards && $cards->ReplyCode == 200) ? $cards->ReplyData[0] : FALSE;
@@ -137,7 +150,7 @@ class Leankit extends LeanKitKanban {
       $cards_result = $this->searchCards($board);
       if ($cards_result) {
         // Parse data.
-        $cards = $this->_getCards($cards_result);
+        $cards = $this->_decodeCards($cards_result);
         $cards_result = json_decode($cards_result);
         $cards_result = ($cards_result && $cards_result->ReplyCode == 200) ? $cards_result->ReplyData[0] : false;
 
@@ -145,7 +158,7 @@ class Leankit extends LeanKitKanban {
         if ($cards_result && ($cards_result->TotalResults > $cards_result->MaxResults) && $cards_result->Page == 1) {
           // We need more pages as API limits to 20 items.
           for ($i = 2; $i <= ceil($cards_result->TotalResults / $cards_result->MaxResults); $i++) {
-            $cards = array_merge($cards, $this->_getCards($this->searchCards($board, array('page' => $i))));
+            $cards = array_merge($cards, $this->_decodeCards($this->searchCards($board, array('page' => $i))));
           }
         }
       }
@@ -161,15 +174,18 @@ class Leankit extends LeanKitKanban {
    *
    * @param $jira_id
    *
+   * @param string $board
+   *  Board name or id.
+   *
    * @return bool|mixed
    */
-  public function getCardByJiraId($jira_id) {
-    $board = $this->getGmtBoard();
+  public function getCardByJiraId($jira_id, $board = 'Amazee GMT') {
+    $board = $this->getGmtBoard($board);
     $card = $this->getCardByExternalId($board->Id, $jira_id);
 
     if ($card) {
       $card = json_decode($card);
-      $card = ($card && $card->ReplyCode == 200) ? $card->ReplyData[0][0] : FALSE;
+      $card = ($card && $card->ReplyCode == 200) ? (object)$card->ReplyData[0][0] : FALSE;
     }
 
     return $card;
@@ -180,9 +196,12 @@ class Leankit extends LeanKitKanban {
    *
    * @param array $card data of the card
    *
+   * @param string $board
+   *  Board name or id.
+   *
    * @return bool|mixed Card result
    */
-  public function upsertCard(array $card) {
+  public function upsertCard(array $card, $board = 'Amazee GMT') {
     // Map the data.
     $card_data = $this->_mapCard($card);
 
@@ -193,22 +212,30 @@ class Leankit extends LeanKitKanban {
 
     // See if card already in the board.
     $jira_id = $card_data['ExternalCardID'];
-    $leankit_card = $this->getCardByJiraId($jira_id);
-    $gmt_board = $this->getGmtBoard();
+    $leankit_card = $this->getCardByJiraId($jira_id, $board);
+    $gmt_board = $this->getGmtBoard($board);
 
     if ($leankit_card) {
       // Update.
       $card_data['CardId'] = $leankit_card->Id;
       $response = $this->updateCardSimple($card_data, $gmt_board->Id);
-      dd($response);
+      if ($response) {
+        $response = json_decode($response);
+        $response = ($response && $response->ReplyCode == 202) ? $this->getCardByJiraId($jira_id) : FALSE;
+      }
     }
     else {
       // Create.
-      //$response = $this->addCard($card_data, $gmt_board->Id, null);
+      $card_data['Type'] = !empty($card_data['Type']) ? $card_data['Type'] : 'Task';
+      $card_data['TypeId'] = $this->getCardTypeId($card_data['Type']);
+      $response = $this->addCard($card_data, $gmt_board->Id, $this->getDefaultBoardLane());
+      if ($response) {
+        $response = json_decode($response);
+        $response = ($response && $response->ReplyCode == 201) ? $this->getCardByJiraId($jira_id) : FALSE;
+      }
     }
-    // return card.
 
-    return false;
+    return $response;
   }
 
   /**
@@ -229,5 +256,68 @@ class Leankit extends LeanKitKanban {
     }
 
     return $mapped_card;
+  }
+
+  /**
+   * Get a list of card types in the board.
+   *
+   * @param string $board
+   *  Board name or id.
+   *
+   * @return bool|array types of cards in GMT board
+   */
+  public function getBoardCardTypes($board = 'Amazee GMT')
+  {
+    $board = $this->getGmtBoard($board);
+    return ($board) ? $board->CardTypes : FALSE;
+  }
+
+  /**
+   * Returns the ID of a given card type name.
+   *
+   * @param $name
+   * @param string $board
+   * @return bool|string
+   */
+  public function getCardTypeId($name, $board = 'Amazee GMT')
+  {
+    $card_types = $this->getBoardCardTypes($board);
+    if ($card_types) {
+      foreach ($card_types as $ct) {
+        if ($ct->Name == $name) {
+          return $ct->Id;
+        }
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Get a list of lanes in the board.
+   *
+   * @param string $board
+   *  Board name or id.
+   *
+   * @return bool|array list of lanes in GMT board
+   */
+  public function getBoardLanes($board = 'Amazee GMT')
+  {
+    $board = $this->getGmtBoard($board);
+    return ($board) ? $board->Lanes : FALSE;
+  }
+
+  /**
+   * Gets the default board lane.
+   *
+   * @param string $board
+   *  Board name or id.
+   *
+   * @return bool|string id of the lane.
+   */
+  public function getDefaultBoardLane($board = 'Amazee GMT')
+  {
+    $board = $this->getGmtBoard($board);
+    return ($board) ? $board->DefaultDropLaneId : FALSE;
   }
 }

@@ -58,19 +58,23 @@ class LeankitTest extends TestCase
   public function testUpsertCard() {
     $card_1 = [
       'Issue key' => 'VNT-948',
-      'Summary' => 'Create an admin view to export both sides of the flagging data - test'
+      'Summary' => 'Create an admin view to export both sides of the flagging data - test',
     ];
     $card_2 = [
       'Issue key' => 'TEST-123',
-      'Summary' => 'Test card'
+      'Summary' => 'Test card',
+      'Issue type' => 'Bug',
     ];
 
     $leankit_card_1 = $this->leankit->upsertCard($card_1);
     $leankit_card_2 = $this->leankit->upsertCard($card_2);
 
     $this->assertNotFalse($leankit_card_1);
-    $this->assertEquals($leankit_card_1->ExternalCardId, 'VNT-948');
+    $this->assertEquals($leankit_card_1->ExternalCardID, 'VNT-948');
     $this->assertNotFalse($leankit_card_2);
-    $this->assertEquals($leankit_card_2->ExternalCardId, 'TEST-123');
+    $this->assertEquals($leankit_card_2->ExternalCardID, 'TEST-123');
+
+    // Remove the card we just added so that we can test again create method.
+    $this->leankit->deleteCard($this->leankit->getGmtBoard()->Id, $leankit_card_2->Id);
   }
 }
