@@ -12,6 +12,11 @@ use LeanKitKanban;
 class Leankit extends LeanKitKanban {
 
   /**
+   * @var array $map mapping for adding/updating issues from external sources.
+   */
+  protected $map;
+
+  /**
    * Leankit constructor.
    *
    * Override certain values that cannot be overriden in the base class.
@@ -22,6 +27,34 @@ class Leankit extends LeanKitKanban {
     $this->account = env('LEANKIT_ACCOUNT');
     $this->host = 'https://'.$this->account.'.leankit.com';
     $this->api_url = $this->host.'/Kanban/Api/';
+
+    $this->map = $this->getMap();
+  }
+
+  /**
+   * Sets the mapping to follow when updating/creating issues from external sources.
+   *
+   * @param array $map Fields mapping.
+   */
+  public function setMap(array $map) {
+    $this->map = $map;
+  }
+
+  /**
+   * Returns the mapping to follow when updating/creating issues from external sources.
+   * @return array
+   */
+  public function getMap() {
+    if (!$this->map) {
+      $this->map = [
+        'Issue key' => 'ExternalCardID',
+        'Summary' => 'Title',
+        'Description' => 'Description',
+        'Type' => 'Issue type'
+      ];
+    }
+
+    return $this->map;
   }
 
   /**
@@ -121,5 +154,80 @@ class Leankit extends LeanKitKanban {
     }
 
     return false;
+  }
+
+  /**
+   * Gets a card by its Jira ID
+   *
+   * @param $jira_id
+   *
+   * @return bool|mixed
+   */
+  public function getCardByJiraId($jira_id) {
+    $board = $this->getGmtBoard();
+    $card = $this->getCardByExternalId($board->Id, $jira_id);
+
+    if ($card) {
+      $card = json_decode($card);
+      $card = ($card && $card->ReplyCode == 200) ? $card->ReplyData[0][0] : FALSE;
+    }
+
+    return $card;
+  }
+
+  /**
+   * Create or update the card on leankit from the given information.
+   *
+   * @param array $card data of the card
+   *
+   * @return bool|mixed Card result
+   */
+  public function upsertCard(array $card) {
+    // Map the data.
+    $card_data = $this->_mapCard($card);
+
+    // See if we have an ID (mandatory).
+    if (empty($card_data) or empty($card_data['ExternalCardID'])) {
+      return false;
+    }
+
+    // See if card already in the board.
+    $jira_id = $card_data['ExternalCardID'];
+    $leankit_card = $this->getCardByJiraId($jira_id);
+    $gmt_board = $this->getGmtBoard();
+
+    if ($leankit_card) {
+      // Update.
+      $card_data['CardId'] = $leankit_card->Id;
+      $response = $this->updateCardSimple($card_data, $gmt_board->Id);
+      dd($response);
+    }
+    else {
+      // Create.
+      //$response = $this->addCard($card_data, $gmt_board->Id, null);
+    }
+    // return card.
+
+    return false;
+  }
+
+  /**
+   * Maps a given array against the defined leankit map.
+   *
+   * @param array $card data to map
+   *
+   * @return array mapped data
+   */
+  protected function _mapCard(array $card) {
+    $mapped_card = [];
+    $map = $this->getMap();
+
+    foreach ($map as $key => $leankit_key) {
+      if (isset($card[$key])) {
+        $mapped_card[$leankit_key] = $card[$key];
+      }
+    }
+
+    return $mapped_card;
   }
 }
