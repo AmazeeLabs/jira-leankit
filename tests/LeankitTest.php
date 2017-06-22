@@ -16,7 +16,7 @@ class LeankitTest extends TestCase
    */
   public function setUp() {
     parent::setUp();
-    $this->leankit = new \App\Leankit();
+    $this->leankit = new \App\Leankit(env('LEANKIT_ACCOUNT'), env('LEANKIT_USERNAME'), env('LEANKIT_PASSWORD'));
   }
 
   /**
