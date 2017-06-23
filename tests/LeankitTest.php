@@ -64,6 +64,8 @@ class LeankitTest extends TestCase
       'Issue key' => 'TEST-123',
       'Summary' => 'Test card',
       'Issue type' => 'Bug',
+      'Assignee' => 'bgruneberg',
+      'Due Date' => '20/Jan/17 12:00 AM',
     ];
 
     $leankit_card_1 = $this->leankit->upsertCard($card_1);
@@ -76,5 +78,7 @@ class LeankitTest extends TestCase
 
     // Remove the card we just added so that we can test again create method.
     $this->leankit->deleteCard($this->leankit->getGmtBoard()->Id, $leankit_card_2->Id);
+    $no_leankit_ticket = $this->leankit->getCardByJiraId('TEST-123');
+    $this->assertFalse($no_leankit_ticket);
   }
 }
