@@ -16,7 +16,33 @@ class LeankitTest extends TestCase
    */
   public function setUp() {
     parent::setUp();
-    $this->leankit = new \App\Leankit(env('LEANKIT_ACCOUNT'), env('LEANKIT_USERNAME'), env('LEANKIT_PASSWORD'));
+    $this->leankit = new \App\Leankit(
+        env('LEANKIT_ACCOUNT'),
+        env('LEANKIT_USERNAME'),
+        env('LEANKIT_PASSWORD'),
+        [
+            'bkaye' => [
+                'uid' => 471846548,
+                'name' => "Blaize Kaye"
+            ],
+            'bgruneberg' => [
+                'uid' => 471080041,
+                'name' => "Bryan Gruneberg"
+            ],
+            'frangarcia' => [
+                'uid' => 488318167,
+                'name' => "Fran Garcia"
+            ],
+            'gmcwilliams' => [
+                'uid' => 471812924,
+                'name' => "Gari Dev"
+            ],
+            'mostfa' => [
+                'uid' => 499821993,
+                'name' => "Mostfa Ellefi"
+            ]
+        ]
+    );
   }
 
   /**
@@ -64,8 +90,8 @@ class LeankitTest extends TestCase
       'Issue key' => 'TEST-123',
       'Summary' => 'Test card',
       'Issue type' => 'Bug',
-      'Assignee' => 'bgruneberg',
-      'Due Date' => '20/Jan/17 12:00 AM',
+      'Assignee' => 'frangarcia',
+      'Due Date' => '20/Jan/18 12:00 AM',
     ];
 
     $leankit_card_1 = $this->leankit->upsertCard($card_1);

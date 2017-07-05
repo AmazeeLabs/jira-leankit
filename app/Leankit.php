@@ -34,6 +34,12 @@ class Leankit extends LeanKitKanban {
     protected $map;
 
     /**
+     * TODO: this is too specific
+     * @var array $user_map map of users from jira to leankit
+     */
+    protected $user_map;
+
+    /**
      * @var mixed $board most recently used.
      */
     protected $board;
@@ -47,8 +53,9 @@ class Leankit extends LeanKitKanban {
      * @param string $leankitAccount
      * @param string $leankitUsername
      * @param string $leankitPassword
+     * @param array $userMap
      */
-    public function __construct($leankitAccount, $leankitUsername, $leankitPassword) {
+    public function __construct($leankitAccount, $leankitUsername, $leankitPassword, $userMap = NULL) {
         parent::__construct($leankitUsername, $leankitPassword);
 
         $this->account = $leankitAccount;
@@ -56,6 +63,11 @@ class Leankit extends LeanKitKanban {
         $this->api_url = $this->host . self::LEANKIT_API_ENDPOINT;
 
         $this->map = $this->getMap();
+
+        // TODO: too specific...
+        if (!is_null($userMap)) {
+            $this->setUserMap($userMap);
+        }
     }
 
     /**
@@ -87,6 +99,22 @@ class Leankit extends LeanKitKanban {
         }
 
         return $this->map;
+    }
+
+    /**
+     * Returns the current user's map
+     * @return array
+     */
+    public function getUserMap() {
+        return $this->user_map;
+    }
+
+    /**
+     * Sets a jira to leankit user map
+     * @param array $map map of users
+     */
+    public function setUserMap($map) {
+        $this->user_map = $map;
     }
 
     /**
@@ -242,9 +270,20 @@ class Leankit extends LeanKitKanban {
         $leankit_card = $this->getCardByJiraId($jira_id, $board);
         $gmt_board = $this->getGmtBoard($board);
 
+        // Map type.
+        $card_data['Type'] = !empty($card_data['Type']) ? $card_data['Type'] : 'Task';
+        $card_data['TypeId'] = $this->getCardTypeId($card_data['Type']);
+
         if ($leankit_card) {
             // Update.
             $card_data['CardId'] = $leankit_card->Id;
+
+            // Leankit needs user emails here instead of IDs!!!!
+            if (!empty($card_data['AssignedUserIds'])) {
+                $card_data['AssignedUsers'] = implode(',', $this->_convertAssignedUserIdsToEmails($board, $card_data['AssignedUserIds']));
+                unset($card_data['AssignedUserIds']);
+            }
+
             $response = $this->updateCardSimple($card_data, $gmt_board->Id);
             if ($response) {
                 $response = json_decode($response);
@@ -253,8 +292,6 @@ class Leankit extends LeanKitKanban {
         }
         else {
             // Create.
-            $card_data['Type'] = !empty($card_data['Type']) ? $card_data['Type'] : 'Task';
-            $card_data['TypeId'] = $this->getCardTypeId($card_data['Type']);
             $response = $this->addCard($card_data, $gmt_board->Id, $this->getDefaultBoardLane());
             if ($response) {
                 $response = json_decode($response);
@@ -285,6 +322,51 @@ class Leankit extends LeanKitKanban {
         return $mapped_card;
     }
 
+    protected function _convertDueDate($date) {
+        // Jira gives this format: "20/Jan/17 12:00 AM" (NOT compatible with strtotime)
+        // Leankit needs d/m/Y
+        // $date = date('d/m/Y', strtotime($date));
+        $date = \DateTime::createFromFormat('j/M/y g:i A', $date);
+        return $date ? $date->format('d/m/Y') : NULL;
+    }
+
+    protected function _convertAssignedUserIds($users, $board) {
+        // Jira gives the jira username, which doesn't match with any field in leankit
+        $users = explode(',', $users);
+        if (!empty($users)) {
+            $tmp = [];
+
+            $user_map = $this->getUserMap();
+            if ($user_map) {
+                // We have a custom mapping - not ideal.
+                foreach ($users as $user) {
+                    if (!empty($user_map[$user])) {
+                        $tmp[] = $user_map[$user]['uid'];
+                    }
+                }
+            }
+            else {
+                // This will try to match by Name - weak.
+                $board_users = $this->getBoardUsers($board);
+                foreach ($users as $user) {
+                    if (($index = array_search($user, $board_users)) !== FALSE) {
+                        $tmp[] = $index;
+                    }
+                }
+            }
+
+            // Copy tmp to users
+            $users = $tmp;
+        }
+
+        // None passed initially or none valid.
+        if (empty($users)) {
+            $users = NULL;
+        }
+
+        return $users;
+    }
+
     /**
      * Sanitize data.
      *
@@ -297,39 +379,12 @@ class Leankit extends LeanKitKanban {
     protected function _sanitizeData(array $card_data, $board) {
         // Format date if present.
         if (!empty($card_data['DueDate'])) {
-            // TODO: Jira gives this format: "20/Jan/17 12:00 AM" which is NOT compatible with strtotime
-//            if (strtotime($card_data['DueDate']) === FALSE) {
-//                unset($card_data['DueDate']);
-//            }
-//            else {
-//                $card_data['DueDate'] = date('d/m/Y', strtotime($card_data['DueDate']));
-//            }
-            unset($card_data['DueDate']);
+            $card_data['DueDate'] = $this->_convertDueDate($card_data['DueDate']);
         }
 
         // Find userId if present.
         if (!empty($card_data['AssignedUserIds'])) {
-            // TODO: Jira gives the jira username, which doesn't match with any field in leankit
-//            $users = explode(',', $card_data['AssignedUserIds']);
-//            if (!empty($users)) {
-//                $tmp = [];
-//                $board_users = $this->getBoardUsers($board);
-//                dd($board_users);
-//                foreach ($users as $user) {
-//                    if (($index = array_search($user, $board_users)) !== FALSE) {
-//                        $tmp[] = $index;
-//                    }
-//                }
-//
-//                $users = $tmp;
-//            }
-//
-//            // None passed initially or none valid.
-//            if (empty($users)) {
-//                unset($card_data['AssignedUserIds']);
-//            }
-
-            unset($card_data['AssignedUserIds']);
+            $card_data['AssignedUserIds'] = $this->_convertAssignedUserIds($card_data['AssignedUserIds'], $board);
         }
 
         return $card_data;
@@ -415,5 +470,26 @@ class Leankit extends LeanKitKanban {
     public function getDefaultBoardLane($board = 'Amazee GMT') {
         $board = $this->getGmtBoard($board);
         return ($board) ? $board->DefaultDropLaneId : FALSE;
+    }
+
+    /**
+     * Transform userIds into emails
+     * @param string $board board to get users from
+     * @param array $user_ids ids of the users
+     * @return array list of emails
+     */
+    protected function _convertAssignedUserIdsToEmails($board, $user_ids) {
+        $users = $this->getBoardUsers($board, FALSE);
+
+        $emails = [];
+        if ($users) {
+            foreach ($users as $user) {
+                if (in_array($user->Id, $user_ids)) {
+                    $emails[] = $user->EmailAddress;
+                }
+            }
+        }
+
+        return $emails;
     }
 }
