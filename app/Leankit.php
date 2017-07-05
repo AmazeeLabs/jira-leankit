@@ -380,11 +380,17 @@ class Leankit extends LeanKitKanban {
         // Format date if present.
         if (!empty($card_data['DueDate'])) {
             $card_data['DueDate'] = $this->_convertDueDate($card_data['DueDate']);
+            if (is_null($card_data['DueDate'])) {
+                unset($card_data['DueDate']);
+            }
         }
 
         // Find userId if present.
         if (!empty($card_data['AssignedUserIds'])) {
             $card_data['AssignedUserIds'] = $this->_convertAssignedUserIds($card_data['AssignedUserIds'], $board);
+            if (is_null($card_data['AssignedUserIds'])) {
+                unset($card_data['AssignedUserIds']);
+            }
         }
 
         return $card_data;
